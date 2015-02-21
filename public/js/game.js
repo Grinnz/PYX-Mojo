@@ -12,6 +12,9 @@ ws.onmessage = function (e) {
 	}
 	document.getElementById('log').innerHTML += '<p>' + msg + '</p>';
 };
+ws.onclose = function (e) {
+	document.getElementById('log').innerHTML += '<p>Connection closed</p>';
+};
 function sendChat(input) { ws.send(JSON.stringify({'action': 'chat', 'msg': input.value})); input.value = '' }
 window.onbeforeunload = function() {
 	ws.send(JSON.stringify({'action': 'leave'}));
