@@ -7,38 +7,50 @@ sub join_game {
 	$self->app->log->debug('WebSocket opened');
 	$self->inactivity_timeout(30);
 	my $game_id = $self->param('id');
-	my $nick = $self->session->{nick} // 'Tester';
 	$self->stash(game_id => $game_id);
+	$self->stash(channel => "game:$game_id");
+	$self->stash(nick => $self->session->{nick} // 'Tester');
 	
-	my $channel = "game:$game_id";
+	$self->on(message => \&ws_message);
+	$self->on(finish => \&ws_close);
 	
-	$self->on(message => sub {
-		my ($self, $msg) = @_;
-		return $self->app->log->warn("Received invalid WebSocket message: $msg")
-			unless my $msg_hash = eval { decode_json $msg };
-		
-		my $action = $msg_hash->{action} // 'chat';
-		if ($action eq 'chat') {
-			$self->redis->publish($channel => encode_json { from => $nick, action => 'chat', msg => $msg_hash->{msg} });
-		}
-	});
-	$self->on(finish => sub {
-		my ($self, $code, $reason) = @_;
-		$self->app->log->debug("WebSocket closed with status $code");
-		$self->redis->publish($channel => encode_json { from => $nick, action => 'leave' });
-	});
+	$self->redis->on(message => sub { $self->redis_message(@_) });
+	$self->redis->subscribe(["game:$game_id"] => sub { $self->redis_subscribe(@_) });
+}
+
+sub ws_message {
+	my ($self, $msg) = @_;
+	return $self->app->log->warn("Received invalid WebSocket message: $msg")
+		unless my $msg_hash = eval { decode_json $msg };
 	
-	my $redis = $self->redis;
-	my $log = $self->app->log;
-	$redis->on(message => sub {
-		my ($redis, $msg, $channel) = @_;
-		$self->send($msg);
-	});
-	$redis->subscribe(["game:$game_id"] => sub {
-		my ($redis, $err) = @_;
-		return $log->error($err) if $err;
-		$redis->publish($channel => encode_json { from => $nick, action => 'join' });
-	});
+	my $channel = $self->stash('channel');
+	my $nick = $self->stash('nick');
+	my $action = $msg_hash->{action} // 'chat';
+	if ($action eq 'chat') {
+		$self->redis->publish($channel => encode_json { from => $nick, action => 'chat', msg => $msg_hash->{msg} });
+	}
+}
+
+sub ws_close {
+	my ($self, $code, $reason) = @_;
+	$self->app->log->debug("WebSocket closed with status $code");
+	my $channel = $self->stash('channel');
+	my $nick = $self->stash('nick');
+	$self->redis->publish($channel => encode_json { from => $nick, action => 'leave' });
+}
+
+sub redis_subscribe {
+	my ($self, $redis, $err) = @_;
+	return $self->app->log->error($err) if $err;
+	my $channel = $self->stash('channel');
+	my $nick = $self->stash('nick');
+	$redis->publish($channel => encode_json { from => $nick, action => 'join' });
+}
+
+sub redis_message {
+	my ($self, $redis, $msg, $channel) = @_;
+	return unless $channel eq $self->stash('channel');
+	$self->send($msg);
 }
 
 1;
