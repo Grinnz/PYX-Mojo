@@ -1,0 +1,23 @@
+<html>
+<head>
+<title>Game Test</title>
+</head>
+<body>
+<form onsubmit="sendChat(this.children[0]); return false"><input></form>
+<div id="log"></div>
+<script>
+	var ws = new WebSocket('<%= url_for('ws_join')->to_abs->path("/game/$id/join") %>');
+	ws.onmessage = function (e) {
+		var data = JSON.parse(e.data);
+		var msg = '';
+		if (data.cmd === 'chat') {
+			msg = data.from + ': ' + data.msg;
+		} else if (data.cmd === 'join') {
+			msg = data.from + ' has joined';
+		}
+		document.getElementById('log').innerHTML += '<p>' + msg + '</p>';
+	};
+	function sendChat(input) { ws.send(JSON.stringify({'cmd': 'chat', 'msg': input.value})); input.value = '' }
+</script>
+</body>
+</html>
