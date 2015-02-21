@@ -14,10 +14,15 @@
 			msg = data.from + ': ' + data.msg;
 		} else if (data.cmd === 'join') {
 			msg = data.from + ' has joined';
+		} else if (data.cmd === 'leave') {
+			msg = data.from + ' has left';
 		}
 		document.getElementById('log').innerHTML += '<p>' + msg + '</p>';
 	};
 	function sendChat(input) { ws.send(JSON.stringify({'cmd': 'chat', 'msg': input.value})); input.value = '' }
+	window.onbeforeunload = function() {
+		ws.send(JSON.stringify({'cmd': 'leave'}));
+	};
 </script>
 </body>
 </html>

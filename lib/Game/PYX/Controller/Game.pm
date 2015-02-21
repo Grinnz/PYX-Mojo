@@ -27,6 +27,7 @@ sub join_game {
 	$self->on(finish => sub {
 		my ($self, $code, $reason) = @_;
 		$self->app->log->debug("WebSocket closed with status $code");
+		$self->redis->publish($channel => encode_json { from => $nick, cmd => 'leave' });
 	});
 	
 	my $redis = $self->redis;
