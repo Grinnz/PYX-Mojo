@@ -1,6 +1,8 @@
 package Game::PYX::Controller::Game;
 use Mojo::Base 'Mojolicious::Controller';
+use Mojo::IOLoop;
 use Mojo::JSON qw/decode_json encode_json/;
+use Scalar::Util 'weaken';
 
 sub join_game {
 	my $self = shift;
@@ -8,14 +10,18 @@ sub join_game {
 	$self->inactivity_timeout(30);
 	my $game_id = $self->param('id');
 	$self->stash(game_id => $game_id);
-	$self->stash(channel => "game:$game_id");
+	my $channel = "game:$game_id";
+	$self->stash(channel => $channel);
 	$self->stash(nick => $self->session->{nick} // 'Tester');
+	
+	Mojo::IOLoop->singleton->on(finish => sub { $self->loop_finish });
 	
 	$self->on(message => \&ws_message);
 	$self->on(finish => \&ws_close);
 	
+	weaken $self;
 	$self->redis->on(message => sub { $self->redis_message(@_) });
-	$self->redis->subscribe(["game:$game_id"] => sub { $self->redis_subscribe(@_) });
+	$self->redis->subscribe([$channel] => sub { $self->redis_subscribe(@_) });
 }
 
 sub ws_message {
@@ -51,6 +57,11 @@ sub redis_message {
 	my ($self, $redis, $msg, $channel) = @_;
 	return unless $channel eq $self->stash('channel');
 	$self->send($msg);
+}
+
+sub loop_finish {
+	my $self = shift;
+	$self->finish('Server exiting');
 }
 
 1;
