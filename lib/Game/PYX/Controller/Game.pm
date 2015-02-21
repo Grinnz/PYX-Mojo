@@ -43,6 +43,7 @@ sub ws_close {
 	my $channel = $self->stash('channel');
 	my $nick = $self->stash('nick');
 	$self->redis->publish($channel => encode_json { from => $nick, action => 'leave' });
+	$self->redis->unsubscribe([$channel]);
 }
 
 sub redis_subscribe {
@@ -61,7 +62,7 @@ sub redis_message {
 
 sub loop_finish {
 	my $self = shift;
-	$self->finish('Server exiting');
+	$self->finish(1001 => 'Server exiting');
 }
 
 1;
