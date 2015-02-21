@@ -23,6 +23,9 @@
 	window.onbeforeunload = function() {
 		ws.send(JSON.stringify({'cmd': 'leave'}));
 	};
+	setInterval(function() {
+		ws.send(JSON.stringify({'cmd': 'heartbeat'}));
+	});
 </script>
 </body>
 </html>
