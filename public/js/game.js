@@ -1,4 +1,4 @@
-var ws_url = document.getElementById('ws_url').innerHTML;
+var ws_url = document.getElementById('ws_url').textContent;
 var ws = new WebSocket(ws_url);
 ws.onmessage = function (e) {
 	var data = JSON.parse(e.data);
