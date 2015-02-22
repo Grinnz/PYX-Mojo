@@ -3,6 +3,7 @@
 <title>Game Test</title>
 </head>
 <body>
+<form onsubmit="startGame(this.children[0]); return false"><input type="submit" value="Start Game"></form>
 <form onsubmit="sendChat(this.children[0]); return false"><input></form>
 <div id="log"></div>
 <div id="ws_url" style="display:none"><%= url_for('ws_join')->to_abs->path("/game/$id/join") %></div>

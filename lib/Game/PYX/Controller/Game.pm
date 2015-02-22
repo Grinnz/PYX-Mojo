@@ -1,7 +1,7 @@
 package Game::PYX::Controller::Game;
 use Mojo::Base 'Mojolicious::Controller';
 use Mojo::IOLoop;
-use Mojo::JSON qw/decode_json encode_json/;
+use Mojo::JSON qw/decode_json encode_json false true/;
 use List::Util 'shuffle';
 use Scalar::Util 'weaken';
 
@@ -51,6 +51,13 @@ sub ws_message {
 		return $self->app->log->warn("$nick tried to start the game, but is not the host")
 			unless defined $host and $host eq $nick;
 		$self->start_game;
+	} elsif ($action eq 'game_state') {
+		$self->send(encode_json { action => 'game_state', state => $self->game_state });
+	} elsif ($action eq 'card_data') {
+		my $black_cards = $msg_hash->{black_cards} // [];
+		my $white_cards = $msg_hash->{white_cards} // [];
+		$self->send(encode_json { action => 'card_data',
+			cards => $self->card_data($black_cards, $white_cards) });
 	}
 }
 
@@ -62,7 +69,7 @@ sub ws_close {
 	my $redis = $self->redis;
 	$redis->publish($channel => encode_json { from => $nick, action => 'leave', time => time });
 	$redis->unsubscribe([$channel]);
-	$redis->lrem("$channel:players", 0, $nick);
+	$self->remove_player($nick);
 }
 
 sub redis_subscribe {
@@ -81,8 +88,8 @@ sub redis_message {
 	my $action = $msg_hash->{action} // 'chat';
 	if ($action eq 'chat' or $action eq 'join' or $action eq 'leave') {
 		$self->send($msg);
-	} elsif ($action eq 'start') {
-		$self->send(encode_json { action => 'state', state => $self->game_state });
+	} elsif ($action eq 'start_turn') {
+		$self->send(encode_json { action => 'game_state', state => $self->game_state });
 	}
 }
 
@@ -115,13 +122,52 @@ sub game_state {
 	my $state = $self->redis->hmget($channel, 'host', 'status', 'czar');
 	my ($host, $status, $czar) = @$state;
 	my $players = $redis->lrange("$channel:players", 0, -1);
+	my $is_czar = $players->[$czar] eq $nick ? true : false;
 	foreach my $player (@$players) {
 		my $attrs = $redis->hmget("$channel:players:$player", 'score');
 		my ($score) = @$attrs;
-		$player = { nick => $player, score => $score };
+		$player = { nick => $player, score => $score, is_czar => false };
 	}
-	my $hand = $redis->lrange("$channel:players:$nick:hand");
-	return { host => $host, status => $status, czar => $czar, players => $players, hand => $hand };
+	$players->[$czar]{is_czar} = true;
+	my $hand = $redis->lrange("$channel:players:$nick:hand", 0, -1);
+	@$hand = reverse @$hand; # hand stored in reverse for rpoplpush
+	return { host => $host, status => $status, players => $players, hand => $hand, is_czar => $is_czar };
+}
+
+sub card_data {
+	my ($self, $black_cards, $white_cards) = @_;
+	my $redis = $self->redis;
+	my %cards = (white => {}, black => {});
+	foreach my $id (@$black_cards) {
+		my $attrs = $redis->hmget("black_card:$id", 'text', 'draw', 'pick', 'watermark');
+		my ($text, $draw, $pick, $watermark) = @$attrs;
+		$cards{black}{$id} = { text => $text, draw => $draw, pick => $pick, watermark => $watermark };
+	}
+	foreach my $id (@$white_cards) {
+		my $attrs = $redis->hmget("white_card:$id", 'text', 'watermark');
+		my ($text, $watermark) = @$attrs;
+		$cards{white}{$id} = { text => $text, watermark => $watermark };
+	}
+	return \%cards;
+}
+
+sub remove_player {
+	my ($self, $nick) = @_;
+	my $redis = $self->redis;
+	my $channel = $self->stash('channel');
+	$redis->lrem("$channel:players", 0, $nick);
+	my $hand = $redis->lrange("$channel:players:$nick:hand", 0, -1);
+	$redis->del("$channel:players:$nick:hand");
+	$redis->lpush("$channel:discard_white", @$hand) if @$hand;
+	my $host = $redis->hget($channel, 'host');
+	if ($nick eq $host) {
+		my $new_host = $redis->lindex("$channel:players", 0);
+		if (defined $new_host) {
+			$redis->hset($channel, host => $new_host);
+		} else {
+			$redis->hdel($channel, 'host');
+		}
+	}
 }
 
 sub start_game {
@@ -138,7 +184,7 @@ sub start_game {
 	my @white_cards = shuffle keys %white_cards;
 	my @black_cards = shuffle keys %black_cards;
 	
-	my $players = $self->redis->lrange("$channel:players", 0, -1);
+	my $players = $redis->lrange("$channel:players", 0, -1);
 	my $hand_size = 7;
 	my @to_deal = splice @white_cards, 0, $hand_size * @$players;
 	foreach my $i (0..(@$players-1)) {
@@ -152,7 +198,8 @@ sub start_game {
 	$redis->lpush("$channel:draw_white", @white_cards);
 	$redis->lpush("$channel:draw_black", @black_cards);
 	
-	$redis->hmset($channel, status => 'playing', czar => 0);
+	$redis->hset($channel, status => 'playing');
+	$redis->hdel($channel, 'czar');
 	$self->start_turn;
 }
 
@@ -161,6 +208,12 @@ sub start_turn {
 	my $redis = $self->redis;
 	my $channel = $self->stash('channel');
 	
+	my $num_players = $redis->llen("$channel:players");
+	my $czar = $redis->hget($channel, 'czar');
+	$czar = defined $czar ? $czar+1 : 0;
+	$czar = 0 if $czar >= $num_players;
+	$redis->hset($channel, czar => $czar);
+	
 	my $black_card = $redis->rpop("$channel:draw_black");
 	unless (defined $black_card) {
 		$self->shuffle_discard_black;
@@ -168,9 +221,30 @@ sub start_turn {
 	}
 	
 	$redis->hset($channel, black_card => $black_card);
+	my $draw = $redis->hget("black_card:$black_card", 'draw') // 0;
+	$self->draw_white_cards($draw) if $draw > 0;
+	
 	$self->set_expires;
 	
-	$redis->publish($channel => encode_json { action => 'turn' });
+	$redis->publish($channel => encode_json { action => 'start_turn' });
+}
+
+sub draw_white_cards {
+	my ($self, $draw) = @_;
+	return unless $draw > 0;
+	my $redis = $self->redis;
+	my $channel = $self->stash('channel');
+	
+	my $players = $redis->lrange("$channel:players", 0, -1);
+	foreach my $player (@$players) {
+		foreach my $i (1..$draw) {
+			my $drawn = $redis->rpoplpush("$channel:draw_white", "$channel:players:$player:hand");
+			unless (defined $drawn) {
+				$self->shuffle_discard_white;
+				$redis->rpoplpush("$channel:draw_white", "$channel:players:$player:hand");
+			}
+		}
+	}
 }
 
 sub shuffle_discard_black {
@@ -180,8 +254,7 @@ sub shuffle_discard_black {
 	
 	my $black_cards = $redis->lrange("$channel:discard_black");
 	$redis->del("$channel:discard_black");
-	@$black_cards = shuffle @$black_cards;
-	$redis->lpush("$channel:draw_black", @$black_cards);
+	$redis->lpush("$channel:draw_black", shuffle @$black_cards);
 }
 
 sub shuffle_discard_white {
@@ -191,9 +264,7 @@ sub shuffle_discard_white {
 	
 	my $white_cards = $redis->lrange("$channel:discard_white");
 	$redis->del("$channel:discard_white");
-	@$white_cards = shuffle @$white_cards;
-	$redis->lpush("$channel:draw_white", @$white_cards);
+	$redis->lpush("$channel:draw_white", shuffle @$white_cards);
 }
 
 1;
-
