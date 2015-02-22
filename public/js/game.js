@@ -3,6 +3,7 @@ var ws = new WebSocket(ws_url);
 ws.onmessage = function (e) {
 	var data = JSON.parse(e.data);
 	var msg = '';
+	var ts = new Date(data.time * 1000).toLocaleTimeString();
 	if (data.action === 'chat') {
 		msg = data.from + ': ' + data.msg;
 	} else if (data.action === 'join') {
@@ -10,7 +11,7 @@ ws.onmessage = function (e) {
 	} else if (data.action === 'leave') {
 		msg = data.from + ' has left';
 	}
-	document.getElementById('log').innerHTML += '<p>' + msg + '</p>';
+	document.getElementById('log').innerHTML += '<p><span>[' + ts + ']</span> ' + msg + '</p>';
 };
 ws.onclose = function (e) {
 	document.getElementById('log').innerHTML += '<p>Connection closed</p>';

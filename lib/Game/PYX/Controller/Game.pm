@@ -33,7 +33,9 @@ sub ws_message {
 	my $nick = $self->stash('nick');
 	my $action = $msg_hash->{action} // 'chat';
 	if ($action eq 'chat') {
-		$self->redis->publish($channel => encode_json { from => $nick, action => 'chat', msg => $msg_hash->{msg} });
+		$self->redis->publish($channel => encode_json {
+			from => $nick, action => 'chat', msg => $msg_hash->{msg}, time => time
+		});
 	}
 }
 
@@ -42,7 +44,7 @@ sub ws_close {
 	$self->app->log->debug("WebSocket closed with status $code");
 	my $channel = $self->stash('channel');
 	my $nick = $self->stash('nick');
-	$self->redis->publish($channel => encode_json { from => $nick, action => 'leave' });
+	$self->redis->publish($channel => encode_json { from => $nick, action => 'leave', time => time });
 	$self->redis->unsubscribe([$channel]);
 }
 
@@ -51,7 +53,7 @@ sub redis_subscribe {
 	return $self->app->log->error($err) if $err;
 	my $channel = $self->stash('channel');
 	my $nick = $self->stash('nick');
-	$redis->publish($channel => encode_json { from => $nick, action => 'join' });
+	$redis->publish($channel => encode_json { from => $nick, action => 'join', time => time });
 }
 
 sub redis_message {
