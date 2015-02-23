@@ -5,8 +5,14 @@
 <body>
 <form onsubmit="startGame(this.children[0]); return false"><input type="submit" value="Start Game"></form>
 <form onsubmit="sendChat(this.children[0]); return false"><input></form>
-<div id="log"></div>
+<div data-bind="foreach: chatLog">
+	<p>
+		<span data-bind="text: timestamp"></span>
+		<span data-bind="text: message"></span>
+	</p>
+</div>
 <div id="ws_url" style="display:none"><%= url_for('ws_join')->to_abs->path("/game/$id/join") %></div>
+<script src="/js/knockout.js"></script>
 <script src="/js/game.js"></script>
 </body>
 </html>

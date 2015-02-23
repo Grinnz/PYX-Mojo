@@ -1,3 +1,21 @@
+function ChatMessage(date, msg) {
+	var self = this;
+	self.timestamp = '['+date.toLocaleTimeString()+']';
+	self.message = msg;
+}
+
+function GameViewModel() {
+	var self = this;
+	
+	self.chatLog = ko.observableArray();
+	self.addChatLog = function (date, msg) {
+		self.chatLog.push(new ChatMessage(date, msg));
+	}
+}
+
+var gvm = new GameViewModel();
+ko.applyBindings(gvm);
+
 var ws_url = document.getElementById('ws_url').textContent;
 var ws = new WebSocket(ws_url);
 ws.onmessage = function (e) {
@@ -17,8 +35,17 @@ ws.onmessage = function (e) {
 	}
 };
 ws.onclose = function (e) {
-	document.getElementById('log').innerHTML += '<p>Connection closed</p>';
+	gvm.addChatLog(new Date(), 'Connection closed');
 };
+window.onbeforeunload = function() {
+	ws.send(JSON.stringify({'action': 'leave'}));
+};
+setInterval(function() {
+	ws.send(JSON.stringify({'action': 'heartbeat'}));
+}, 10000);
+function sendChat(input) { ws.send(JSON.stringify({'action': 'chat', 'msg': input.value})); input.value = '' }
+function startGame(button) { ws.send(JSON.stringify({'action': 'start'})); button.disabled = true; }
+
 function showChat(data) {
 	var msg = '';
 	switch (data.action) {
@@ -32,14 +59,7 @@ function showChat(data) {
 		msg = data.from + ' has left';
 		break;
 	}
-	var ts = new Date(data.time * 1000).toLocaleTimeString();
-	document.getElementById('log').innerHTML += '<p><span>[' + ts + ']</span> ' + msg + '</p>';
+	var date = new Date(data.time * 1000);
+	gvm.addChatLog(date, msg);
 }
-function sendChat(input) { ws.send(JSON.stringify({'action': 'chat', 'msg': input.value})); input.value = '' }
-function startGame(button) { ws.send(JSON.stringify({'action': 'start'})); button.disabled = true; }
-window.onbeforeunload = function() {
-	ws.send(JSON.stringify({'action': 'leave'}));
-};
-setInterval(function() {
-	ws.send(JSON.stringify({'action': 'heartbeat'}));
-}, 10000);
+
