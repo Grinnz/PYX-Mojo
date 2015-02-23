@@ -3,8 +3,8 @@
 <title>Game Test</title>
 </head>
 <body>
-<form onsubmit="startGame(this.children[0]); return false"><input type="submit" value="Start Game"></form>
-<form onsubmit="sendChat(this.children[0]); return false"><input></form>
+<input data-bind="click: startGame, enable: canStartGame" type="submit" value="Start Game">
+<form data-bind="submit: sendChat"><input data-bind="value: chatInput"></form>
 <div data-bind="foreach: chatLog">
 	<p>
 		<span data-bind="text: timestamp"></span>
