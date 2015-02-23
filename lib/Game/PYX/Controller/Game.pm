@@ -54,8 +54,8 @@ sub ws_message {
 	} elsif ($action eq 'game_state') {
 		$self->send(encode_json { action => 'game_state', state => $self->game_state });
 	} elsif ($action eq 'card_data') {
-		my $black_cards = $msg_hash->{black_cards} // [];
-		my $white_cards = $msg_hash->{white_cards} // [];
+		my $black_cards = $msg_hash->{cards}{black} // [];
+		my $white_cards = $msg_hash->{cards}{white} // [];
 		$self->send(encode_json { action => 'card_data',
 			cards => $self->card_data($black_cards, $white_cards) });
 	}
@@ -119,8 +119,8 @@ sub game_state {
 	my $redis = $self->redis;
 	my $channel = $self->stash('channel');
 	my $nick = $self->stash('nick');
-	my $state = $self->redis->hmget($channel, 'host', 'status', 'czar');
-	my ($host, $status, $czar) = @$state;
+	my $state = $self->redis->hmget($channel, 'host', 'status', 'czar', 'black_card');
+	my ($host, $status, $czar, $black_card) = @$state;
 	my $players = $redis->lrange("$channel:players", 0, -1);
 	my $is_czar = $players->[$czar] eq $nick ? true : false;
 	foreach my $player (@$players) {
@@ -131,7 +131,8 @@ sub game_state {
 	$players->[$czar]{is_czar} = true;
 	my $hand = $redis->lrange("$channel:players:$nick:hand", 0, -1);
 	@$hand = reverse @$hand; # hand stored in reverse for rpoplpush
-	return { host => $host, status => $status, players => $players, hand => $hand, is_czar => $is_czar };
+	return { host => $host, status => $status, black_card => $black_card, players => $players,
+		hand => $hand, is_czar => $is_czar };
 }
 
 sub card_data {

@@ -3,13 +3,25 @@
 <title>Game Test</title>
 </head>
 <body>
-<input data-bind="click: startGame, enable: canStartGame" type="submit" value="Start Game">
+<div><input data-bind="click: startGame, enable: canStartGame" type="submit" value="Start Game"></div>
+Black Card:
+<div data-bind="template: { name: 'black-card', data: blackCard, if: blackCard }"></div>
+<script type="text/html" id="black-card">
+	<p><span data-bind="html: text"></span></p>
+	<p>Draw <span data-bind="text: draw"></span>, Pick <span data-bind="text: pick"></span></p>
+</script>
+Hand:
+<div id="hand" data-bind="foreach: hand">
+	<p><span data-bind="html: text"></span></p>
+</div>
+<div id="chat">
 <form data-bind="submit: sendChat"><input data-bind="value: chatInput"></form>
 <div data-bind="foreach: chatLog">
 	<p>
 		<span data-bind="text: timestamp"></span>
 		<span data-bind="text: message"></span>
 	</p>
+</div>
 </div>
 <div id="ws_url" style="display:none"><%= url_for('ws_join')->to_abs->path("/game/$id/join") %></div>
 <script src="/js/knockout.js"></script>
