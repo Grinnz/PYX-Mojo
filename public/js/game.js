@@ -40,6 +40,35 @@ function BlackCard(id) {
 function GameViewModel() {
 	var self = this;
 	
+	self.goToLandingPage = function() { location.hash = ''; };
+	self.goToGamesLobby = function() { location.hash = 'games'; };
+	self.goToGame = function(game) { location.hash = 'games/' + game; };
+	self.showLandingPage = ko.observable(false);
+	self.showGamesLobby = ko.observable(false);
+	self.activeGame = ko.observable(null);
+	
+	self.nick = ko.observable(null);
+	self.requestedOnNick = null;
+	
+	self.submitNick = function() {
+		ws_send({'action':'set_nick', 'nick':self.nick()});
+	};
+	
+	self.onNickUpdate = function(redir) {
+		if (self.requestedOnNick !== null) {
+			location.hash = requested;
+			self.requestedOnNick = null;
+		} else if (redir) {
+			self.goToGamesLobby();
+		}
+	}
+	
+	self.availableGames = ko.observableArray();
+	
+	self.joinGame = function(game) {
+		ws_send({'action':'join_game', 'game':game});
+	};
+	
 	self.chatInput = ko.observable('');
 	self.sendChat = function() {
 		ws_send({'action':'chat', 'msg':self.chatInput()});
@@ -66,6 +95,54 @@ function GameViewModel() {
 		if (id === null) { self.blackCard(null); }
 		else { self.blackCard(new BlackCard(id)); }
 	};
+	
+	var r = Rlite();
+	// Default route
+	r.add('', function() {
+		document.title = 'PYX Test';
+		console.log('Loading landing page');
+		self.activeGame(null);
+		self.showGamesLobby(false);
+		self.showLandingPage(true);
+	});
+	
+	r.add('games', function() {
+		console.log('Loading games lobby');
+		if (self.nick() !== null) {
+			document.title = 'PYX Lobby';
+			self.activeGame(null);
+			self.showLandingPage(false);
+			self.showGamesLobby(true);
+		} else {
+			self.requestedPage = location.hash;
+			self.goToLandingPage();
+		}
+	});
+	
+	r.add('games/:name', function(r) {
+		var game = r.params.name;
+		console.log('Loading game ' + game);
+		if (self.nick() !== null) {
+			document.title = 'PYX Game ' + game;
+			self.showLandingPage(false);
+			self.showGamesLobby(false);
+			self.activeGame(game);
+		} else {
+			self.requestedPage = location.hash;
+			self.goToLandingPage();
+		}
+	});
+	
+	function processHash() {
+		var hash = location.hash || '#';
+		if (!r.run(hash.substr(1))) {
+			// No route match
+			self.goToLandingPage();
+		}
+	}
+	
+	window.addEventListener('hashchange', processHash);
+	processHash();
 }
 
 var gvm = new GameViewModel();
@@ -74,9 +151,35 @@ ko.applyBindings(gvm);
 var ws_url = document.getElementById('ws_url').textContent;
 var ws = new WebSocket(ws_url);
 
+ws.onopen = function (e) {
+	var userid = localStorage.getItem('userid');
+	ws_send({'action':'set_userid', 'userid':userid});
+};
+
 ws.onmessage = function (e) {
 	var data = JSON.parse(e.data);
 	switch (data.action) {
+	case 'set_userid':
+		localStorage.setItem('userid', data.userid);
+		break;
+	case 'user_data':
+		setUserData(data.user);
+		break;
+	case 'confirm_nick':
+		if (data.confirmed) {
+			gvm.nick(data.nick);
+			gvm.onNickUpdate(true);
+		} else {
+			gvm.nickError(data.error);
+		}
+		break;
+	case 'confirm_join':
+		if (data.confirmed) {
+			gvm.goToGame(data.game);
+		} else {
+			gvm.joinError(data.error);
+		}
+		break;
 	case 'game_state':
 		setGameState(data.state);
 		updateCardData();
@@ -118,6 +221,13 @@ function showChat(data) {
 	}
 	var date = new Date(data.time * 1000);
 	gvm.addChatLog(date, msg);
+}
+
+function setUserData(user) {
+	if (user.nick !== null) {
+		gvm.nick(user.nick);
+		gvm.onNickUpdate(false);
+	}
 }
 
 function setGameState(state) {

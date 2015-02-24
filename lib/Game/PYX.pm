@@ -1,6 +1,7 @@
 package Game::PYX;
 use Mojo::Base 'Mojolicious';
 use Mojo::Redis2;
+use Scalar::Util 'weaken';
 
 sub startup {
 	my $self = shift;
@@ -18,21 +19,15 @@ sub startup {
 			my $url = $c->config('redis_url');
 			$c->stash('pyx.redis' => ($redis = defined $url
 				? Mojo::Redis2->new(url => $url) : Mojo::Redis2->new));
+			weaken $c;
+			$redis->on(message => sub { $c->on_redis_message(@_) });
 		}
 		return $redis;
 	});
 	
 	my $r = $self->routes;
-	$r->get('/')->to(template => 'index');
-	$r->post('/' => sub {
-		my $c = shift;
-		my $nick = $c->param('nick') // 'Tester';
-		my $game = $c->param('game') // 'test';
-		$c->session->{nick} = $nick;
-		$c->redirect_to("/game/$game");
-	});
-	$r->get('/game/:id')->to(template => 'game');
-	$r->websocket('/game/:id/join')->to('game#join_game')->name('ws_join');
+	$r->get('/')->to(template => 'game');
+	$r->websocket('/ws')->to('game#connect')->name('ws_connect');
 }
 
 1;
