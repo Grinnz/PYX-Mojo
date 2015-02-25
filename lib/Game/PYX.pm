@@ -12,6 +12,14 @@ sub startup {
 	my $secret = $self->config('secret') // 'pyx';
 	$self->secrets([$secret]);
 	
+	my $log = $self->log;
+	$SIG{__WARN__} = sub {
+		my $err = shift;
+		chomp $err;
+		$log->warn($err);
+		warn "$err\n";
+	};
+	
 	$self->helper(redis => sub {
 		my $c = shift;
 		my $redis = $c->stash('pyx.redis');

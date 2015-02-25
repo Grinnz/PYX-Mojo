@@ -168,7 +168,7 @@ sub on_redis_message {
 	if ($action eq 'user_chat' or $action eq 'user_join' or $action eq 'user_leave' or $action eq 'user_disconnect') {
 		$self->send($msg);
 	} elsif ($action eq 'start_turn') {
-		$self->send(encode_json { game => $game, action => 'game_state', state => $self->game_state });
+		$self->send(encode_json { game => $game, action => 'game_state', state => $self->game_state($game) });
 	} else {
 		$self->app->log->warn("Received unknown Redis action for $nick: $action");
 	}
