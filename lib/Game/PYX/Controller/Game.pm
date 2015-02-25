@@ -52,6 +52,8 @@ sub loop_finish {
 my %ws_dispatch = (
 	set_nick => 'ws_set_nick',
 	chat => 'ws_chat',
+	game_list => 'ws_game_list',
+	create_game => 'ws_create_game',
 	join_game => 'ws_join_game',
 	start_game => 'ws_start_game',
 	game_state => 'ws_game_state',
@@ -64,6 +66,7 @@ sub on_ws_message {
 	my $nick = $self->stash->{nick};
 	return $self->app->log->warn("Received invalid WebSocket message from $nick: $msg")
 		unless my $msg_hash = eval { decode_json $msg };
+	$self->app->log->debug("Received WebSocket message from $nick: $msg");
 	
 	my $action = $msg_hash->{action} // 'unknown';
 	if (exists $ws_dispatch{$action}) {
@@ -90,27 +93,41 @@ sub ws_chat {
 	my $msg = $msg_hash->{msg};
 	$self->app->log->debug("[$game] <$nick> $msg");
 	$self->redis->publish("game:$game" => encode_json {
-		game => $game, from => $nick, action => 'chat', msg => $msg, time => time
+		game => $game, from => $nick, action => 'user_chat', msg => $msg, time => time
 	});
+}
+
+sub ws_game_list {
+	my $self = shift;
+	$self->send(encode_json { action => 'game_list', games => $self->game_list });
+}
+
+sub ws_create_game {
+	my ($self, $msg_hash) = @_;
+	my $game = $msg_hash->{game};
+	$self->create_game($game);
 }
 
 sub ws_join_game {
 	my ($self, $msg_hash) = @_;
 	my $nick = $self->stash->{nick};
 	my $game = $msg_hash->{game};
+	return $self->app->log->warn("$nick tried to join game $game, but it does not exist")
+		unless $self->redis->exists("game:$game");
 	$self->join_game($game);
 }
 
 sub ws_start_game {
 	my ($self, $msg_hash) = @_;
+	my $userid = $self->session->{userid};
 	my $nick = $self->stash->{nick};
 	my $game = $msg_hash->{game};
 	my ($host, $status) = @{$self->redis->hmget("game:$game", 'host', 'status')};
 	return $self->app->log->warn("$nick tried to start game $game, but it is already in progress")
 		unless $status eq GAME_STATUS_UNSTARTED;
 	return $self->app->log->warn("$nick tried to start game $game, but is not the host")
-		unless defined $host and $host eq $nick;
-	$self->start_game;
+		unless defined $host and $host eq $userid;
+	$self->start_game($game);
 }
 
 sub ws_game_state {
@@ -129,12 +146,13 @@ sub ws_card_data {
 
 sub on_ws_close {
 	my ($self, $code, $reason) = @_;
+	my $userid = $self->session->{userid};
 	my $nick = $self->stash->{nick};
 	$self->app->log->debug("WebSocket for $nick closed with status $code");
 	my $redis = $self->redis;
-	my $games = $redis->smembers("user:$nick:games");
+	my $games = $redis->smembers("user:$userid:games");
 	foreach my $game (@$games) {
-		$redis->publish("game:$game" => encode_json { game => $game, from => $nick, action => 'disconnect', time => time });
+		$redis->publish("game:$game" => encode_json { game => $game, from => $nick, action => 'user_disconnect', time => time });
 	}
 	$redis->unsubscribe($games);
 }
@@ -142,11 +160,12 @@ sub on_ws_close {
 sub on_redis_message {
 	my ($self, $redis, $msg, $channel) = @_;
 	my $nick = $self->stash->{nick};
-	return $self->app->log->warn("Received invalid Redis message for $nick: $msg")
+	return $self->app->log->warn("Received invalid Redis message for $nick: [$channel] $msg")
 		unless my $msg_hash = eval { decode_json $msg };
+	$self->app->log->debug("Received Redis message for $nick: [$channel] $msg");
 	my $action = $msg_hash->{action} // 'unknown';
 	my $game = $msg_hash->{game};
-	if ($action eq 'chat' or $action eq 'join' or $action eq 'leave') {
+	if ($action eq 'user_chat' or $action eq 'user_join' or $action eq 'user_leave' or $action eq 'user_disconnect') {
 		$self->send($msg);
 	} elsif ($action eq 'start_turn') {
 		$self->send(encode_json { game => $game, action => 'game_state', state => $self->game_state });
@@ -162,21 +181,43 @@ sub user_data {
 	return { nick => $nick };
 }
 
+sub game_list {
+	my $self = shift;
+	my $redis = $self->redis;
+	my $games = $redis->smembers("games");
+	foreach my $game (@$games) {
+		my $num_players = $redis->llen("game:$game:players") // 0;
+		$game = { name => $game, players => $num_players, joinable => true };
+	}
+	return $games;
+}
+
+sub create_game {
+	my ($self, $game) = @_;
+	my $redis = $self->redis;
+	my $userid = $self->session->{userid};
+	$redis->sadd("games", $game);
+	$redis->hsetnx("game:$game", host => $userid);
+	$redis->hsetnx("game:$game", status => GAME_STATUS_UNSTARTED);
+	$self->send(encode_json { action => 'confirm_create', confirmed => true, game => $game });
+	$self->join_game($game);
+}
+
 sub join_game {
 	my ($self, $game) = @_;
 	my $redis = $self->redis;
+	my $userid = $self->session->{userid};
 	my $nick = $self->stash->{nick};
 	$redis->on(message => sub { $self->on_redis_message(@_) });
 	$redis->subscribe(["game:$game"] => sub {
 		my ($redis, $err) = @_;
 		return $self->app->log->error($err) if $err;
 		$redis->publish("game:$game" =>
-			encode_json { game => $game, from => $nick, action => 'join', time => time });
+			encode_json { game => $game, from => $nick, action => 'user_join', time => time });
 	});
 	
-	$redis->hsetnx("game:$game", host => $nick);
-	$redis->hsetnx("game:$game", status => 'unstarted');
-	$redis->rpush("game:$game:players", $nick);
+	$redis->rpush("game:$game:players", $userid);
+	$redis->sadd("user:$userid:games", $game);
 	$self->set_expires($game);
 	$self->send(encode_json { action => 'confirm_join', confirmed => true, game => $game });
 }
@@ -184,20 +225,25 @@ sub join_game {
 sub game_state {
 	my ($self, $game) = @_;
 	my $redis = $self->redis;
-	my $nick = $self->stash->{nick};
+	my $userid = $self->session->{userid};
+	
 	my ($host, $status, $czar, $black_card)
 		= @{$self->redis->hmget("game:$game", 'host', 'status', 'czar', 'black_card')};
 	my $players = $redis->lrange("game:$game:players", 0, -1);
-	my $is_czar = $players->[$czar] eq $nick ? true : false;
+	
 	foreach my $player (@$players) {
-		my ($score) = @{$redis->hmget("game:$game:players:$player", 'score')};
-		$player = { nick => $player, score => $score, is_czar => false };
+		my ($pnick, $score) = @{$redis->hmget("game:$game:players:$player", 'nick', 'score')};
+		my $is_czar = $czar eq $player ? true : false;
+		my $is_host = $host eq $player ? true : false;
+		$player = { nick => $pnick, score => $score, is_czar => $is_czar, is_host => $is_host };
 	}
-	$players->[$czar]{is_czar} = true;
-	my $hand = $redis->lrange("game:$game:players:$nick:hand", 0, -1);
+	
+	my $is_czar = $czar eq $userid ? true : false;
+	my $is_host = $host eq $userid ? true : false;
+	my $hand = $redis->lrange("game:$game:players:$userid:hand", 0, -1);
 	@$hand = reverse @$hand; # hand stored in reverse for rpoplpush
-	return { host => $host, status => $status, black_card => $black_card, players => $players,
-		hand => $hand, is_czar => $is_czar };
+	return { status => $status, black_card => $black_card, players => $players,
+		hand => $hand, is_czar => $is_czar, is_host => $is_host };
 }
 
 sub card_data {
@@ -217,14 +263,14 @@ sub card_data {
 }
 
 sub remove_player {
-	my ($self, $game, $nick) = @_;
+	my ($self, $game, $userid) = @_;
 	my $redis = $self->redis;
-	$redis->lrem("game:$game:players", 0, $nick);
-	my $hand = $redis->lrange("game:$game:players:$nick:hand", 0, -1);
-	$redis->del("game:$game:players:$nick:hand");
+	$redis->lrem("game:$game:players", 0, $userid);
+	my $hand = $redis->lrange("game:$game:players:$userid:hand", 0, -1);
+	$redis->del("game:$game:players:$userid:hand");
 	$redis->lpush("game:$game:discard_white", @$hand) if @$hand;
 	my $host = $redis->hget("game:$game", 'host');
-	if ($nick eq $host) {
+	if ($userid eq $host) {
 		my $new_host = $redis->lindex("game:$game:players", 0);
 		if (defined $new_host) {
 			$redis->hset("game:$game", host => $new_host);
@@ -271,11 +317,19 @@ sub start_turn {
 	my ($self, $game) = @_;
 	my $redis = $self->redis;
 	
-	my $num_players = $redis->llen("game:$game:players");
+	my $players = $redis->lrange("game:$game:players", 0, -1);
 	my $czar = $redis->hget("game:$game", 'czar');
-	$czar = defined $czar ? $czar+1 : 0;
-	$czar = 0 if $czar >= $num_players;
-	$redis->hset("game:$game", czar => $czar);
+	my $next_czar;
+	if (defined $czar) {
+		foreach my $i (0..(@$players-1)) {
+			if ($players->[$i] eq $czar) {
+				$next_czar = $players->[$i+1];
+				last;
+			}
+		}
+	}
+	$next_czar //= $players->[0];
+	$redis->hset("game:$game", czar => $next_czar);
 	
 	my $black_card = $redis->rpop("game:$game:draw_black");
 	unless (defined $black_card) {
@@ -330,7 +384,7 @@ sub shuffle_discard_white {
 sub set_expires {
 	my ($self, $game) = @_;
 	my $redis = $self->redis;
-	my $nick = $self->stash->{nick};
+	my $userid = $self->session->{userid};
 	$redis->expire("game:$game" => GAME_EXPIRE_SECONDS);
 	$redis->expire("game:$game:players" => GAME_EXPIRE_SECONDS);
 	$redis->expire("game:$game:draw_white" => GAME_EXPIRE_SECONDS);
@@ -338,8 +392,8 @@ sub set_expires {
 	$redis->expire("game:$game:discard_white" => GAME_EXPIRE_SECONDS);
 	$redis->expire("game:$game:discard_black" => GAME_EXPIRE_SECONDS);
 	$redis->expire("game:$game:played_white" => GAME_EXPIRE_SECONDS);
-	$redis->expire("game:$game:players:$nick" => GAME_EXPIRE_SECONDS);
-	$redis->expire("game:$game:players:$nick:hand" => GAME_EXPIRE_SECONDS);
+	$redis->expire("game:$game:players:$userid" => GAME_EXPIRE_SECONDS);
+	$redis->expire("game:$game:players:$userid:hand" => GAME_EXPIRE_SECONDS);
 }
 
 1;

@@ -11,11 +11,13 @@
 </div>
 
 <div data-bind="visible: showGamesLobby">
+	<form data-bind="submit: createGame"><input data-bind="value: gameToCreate"> <input type="submit" value="Create Game"></form>
 	Here's some games.
 	<div data-bind="foreach: availableGames">
-		<span data-bind="text: name"></span>
-		<input type="submit" value="Join Game"
-			data-bind="click: function(data, event) { $root.joinGame(name, data, event) }">
+		<div>
+			<span data-bind="text: name"></span>
+			<input type="submit" value="Join Game" data-bind="click: $root.joinGame">
+		</div>
 	</div>
 </div>
 

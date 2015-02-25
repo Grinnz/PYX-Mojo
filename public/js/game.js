@@ -7,6 +7,19 @@ function ChatMessage(date, msg) {
 	self.message = msg;
 }
 
+function GameInstance(name) {
+	var self = this;
+	self.name = name;
+	self.players = ko.observable(0);
+	self.isJoinable = ko.observable(true);
+	self.setFromData = function(data) {
+		if (data !== null) {
+			self.players(data.players);
+			self.isJoinable(data.joinable);
+		}
+	}
+}
+
 function WhiteCard(id) {
 	var self = this;
 	self.id = id;
@@ -64,14 +77,25 @@ function GameViewModel() {
 	}
 	
 	self.availableGames = ko.observableArray();
+	self.addToGames = function(games) {
+		games.forEach(function(data) {
+			var game = new GameInstance(data.name);
+			game.setFromData(data);
+			self.availableGames.push(game);
+		});
+	};
 	
+	self.gameToCreate = ko.observable('');
+	self.createGame = function() {
+		ws_send({'action':'create_game', 'game':self.gameToCreate()});
+	};
 	self.joinGame = function(game) {
-		ws_send({'action':'join_game', 'game':game});
+		ws_send({'action':'join_game', 'game':game.name});
 	};
 	
 	self.chatInput = ko.observable('');
 	self.sendChat = function() {
-		ws_send({'action':'chat', 'msg':self.chatInput()});
+		ws_send({'action':'chat', 'game':self.activeGame(), 'msg':self.chatInput()});
 		self.chatInput('');
 	};
 	self.chatLog = ko.observableArray();
@@ -82,7 +106,7 @@ function GameViewModel() {
 	self.canStartGame = ko.observable(true);
 	self.startGame = function() {
 		self.canStartGame(false);
-		ws_send({'action':'start'});
+		ws_send({'action':'start_game', 'game':self.activeGame()});
 	};
 	
 	self.hand = ko.observableArray();
@@ -113,6 +137,7 @@ function GameViewModel() {
 			self.activeGame(null);
 			self.showLandingPage(false);
 			self.showGamesLobby(true);
+			ws_send({'action':'game_list'});
 		} else {
 			self.requestedPage = location.hash;
 			self.goToLandingPage();
@@ -168,6 +193,9 @@ ws.onmessage = function (e) {
 			gvm.nickError(data.error);
 		}
 		break;
+	case 'game_list':
+		setGameList(data.games);
+		break;
 	case 'confirm_join':
 		if (data.confirmed) {
 			gvm.goToGame(data.game);
@@ -183,9 +211,10 @@ ws.onmessage = function (e) {
 		setCardData(data.cards);
 		updateCardData();
 		break;
-	case 'chat':
-	case 'join':
-	case 'leave':
+	case 'user_chat':
+	case 'user_join':
+	case 'user_leave':
+	case 'user_disconnect':
 		showChat(data);
 		break;
 	}
@@ -204,14 +233,17 @@ function ws_send(obj) { ws.send(JSON.stringify(obj)); }
 function showChat(data) {
 	var msg = '';
 	switch (data.action) {
-	case 'chat':
+	case 'user_chat':
 		msg = data.from + ': ' + data.msg;
 		break;
-	case 'join':
+	case 'user_join':
 		msg = data.from + ' has joined';
 		break;
-	case 'leave':
+	case 'user_leave':
 		msg = data.from + ' has left';
+		break;
+	case 'user_disconnect':
+		msg = data.from + ' has disconnected';
 		break;
 	}
 	var date = new Date(data.time * 1000);
@@ -223,6 +255,11 @@ function setUserData(user) {
 		gvm.nick(user.nick);
 		gvm.onNickUpdate(false);
 	}
+}
+
+function setGameList(games) {
+	gvm.availableGames.removeAll();
+	gvm.addToGames(games);
 }
 
 function setGameState(state) {
