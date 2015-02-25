@@ -53,8 +53,8 @@ foreach my $id (keys %$card_sets) {
 	my $black = $set->{black_cards} // [];
 	delete $set->{$_} for grep { !defined $set->{$_} } keys %$set;
 	$redis->hmset("card_set:$id", %$set) if %$set;
-	$redis->sadd("card_set:$id:white_cards", @$white);
-	$redis->sadd("card_set:$id:black_cards", @$black);
+	$redis->sadd("card_set:$id:white_cards", @$white) if @$white;
+	$redis->sadd("card_set:$id:black_cards", @$black) if @$black;
 }
 
 my $white_count = keys %$white_cards;
