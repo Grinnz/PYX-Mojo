@@ -17,3 +17,6 @@ nytprof.out
 /pm_to_blib
 *.o
 *.bs
+/pyx.conf
+/log/*.log
+/script/hypnotoad.pid
