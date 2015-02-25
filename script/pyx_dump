@@ -1,0 +1,40 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Mojo::Server;
+use Mojo::JSON 'encode_json';
+
+use FindBin;
+BEGIN { unshift @INC, "$FindBin::Bin/../lib" }
+
+my $dumpfile = shift;
+my $fh;
+open $fh, '>', $dumpfile or die "Failed to open $dumpfile for dumping: $!"
+	if defined $dumpfile;
+
+my $server = Mojo::Server->new;
+my $app = $server->build_app('Game::PYX');
+my $redis = $app->redis;
+
+my $white_cards = $redis->smembers("white_cards");
+my $black_cards = $redis->smembers("black_cards");
+my $card_sets = $redis->smembers("card_sets");
+
+my %dump;
+$dump{white_cards}{$_} = {@{$redis->hgetall("white_card:$_")}} for @$white_cards;
+$dump{black_cards}{$_} = {@{$redis->hgetall("black_card:$_")}} for @$black_cards;
+foreach my $id (@$card_sets) {
+	my $props = $redis->hgetall("card_set:$id");
+	my %props = @$props;
+	$props{white_cards} = $redis->smembers("card_set:$id:white_cards");
+	$props{black_cards} = $redis->smembers("card_set:$id:black_cards");
+	$dump{card_sets}{$id} = \%props;
+}
+
+my $json = encode_json \%dump;
+if (defined $fh) {
+	print $fh $json;
+} else {
+	print $json;
+}

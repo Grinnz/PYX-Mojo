@@ -1,0 +1,63 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Mojo::Server;
+use Mojo::JSON 'decode_json';
+
+use FindBin;
+BEGIN { unshift @INC, "$FindBin::Bin/../lib" }
+
+my $dumpfile = shift;
+my $fh;
+open $fh, '<', $dumpfile or die "Failed to open $dumpfile for loading: $!"
+	if defined $dumpfile;
+my $json;
+{
+	local $/;
+	$json = defined $fh ? readline $fh : readline STDIN;
+}
+
+my $dump = decode_json $json;
+die "Empty card dump\n" unless defined $dump and %$dump;
+
+my $server = Mojo::Server->new;
+my $app = $server->build_app('Game::PYX');
+my $redis = $app->redis;
+
+$redis->del('white_cards', 'black_cards', 'card_sets');
+$redis->del($_) for @{$redis->keys("white_card:*")}, @{$redis->keys("black_card:*")}, @{$redis->keys("card_set:*")};
+
+my $white_cards = $dump->{white_cards} // {};
+my $black_cards = $dump->{black_cards} // {};
+my $card_sets = $dump->{card_sets} // {};
+$redis->sadd('white_cards', keys %$white_cards) if %$white_cards;
+$redis->sadd('black_cards', keys %$black_cards) if %$black_cards;
+$redis->sadd('card_sets', keys %$card_sets) if %$card_sets;
+
+foreach my $id (keys %$white_cards) {
+	my $card = $white_cards->{$id} // {};
+	delete $card->{$_} for grep { !defined $card->{$_} } keys %$card;
+	$redis->hmset("white_card:$id", %$card) if %$card;
+}
+
+foreach my $id (keys %$black_cards) {
+	my $card = $black_cards->{$id} // {};
+	delete $card->{$_} for grep { !defined $card->{$_} } keys %$card;
+	$redis->hmset("black_card:$id", %$card) if %$card;
+}
+
+foreach my $id (keys %$card_sets) {
+	my $set = $card_sets->{$id} // {};
+	my $white = $set->{white_cards} // [];
+	my $black = $set->{black_cards} // [];
+	delete $set->{$_} for grep { !defined $set->{$_} } keys %$set;
+	$redis->hmset("card_set:$id", %$set) if %$set;
+	$redis->sadd("card_set:$id:white_cards", @$white);
+	$redis->sadd("card_set:$id:black_cards", @$black);
+}
+
+my $white_count = keys %$white_cards;
+my $black_count = keys %$black_cards;
+my $set_count = keys %$card_sets;
+print "Loaded $white_count white cards, $black_count black cards, and $set_count card sets into Redis database\n";

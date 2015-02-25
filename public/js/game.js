@@ -152,16 +152,11 @@ var ws_url = document.getElementById('ws_url').textContent;
 var ws = new WebSocket(ws_url);
 
 ws.onopen = function (e) {
-	var userid = localStorage.getItem('userid');
-	ws_send({'action':'set_userid', 'userid':userid});
 };
 
 ws.onmessage = function (e) {
 	var data = JSON.parse(e.data);
 	switch (data.action) {
-	case 'set_userid':
-		localStorage.setItem('userid', data.userid);
-		break;
 	case 'user_data':
 		setUserData(data.user);
 		break;

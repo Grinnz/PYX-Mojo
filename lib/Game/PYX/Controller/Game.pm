@@ -14,8 +14,24 @@ use constant {
 	GAME_STATUS_TURN_WAIT => 'turn_wait',
 };
 
+sub page {
+	my $self = shift;
+	my $userid = $self->session->{userid};
+	unless (defined $userid and $self->redis->exists("user:$userid")) { # New user
+		$userid = md5_sum $self->tx->remote_address . '$' . rand . '$' . time;
+		$self->redis->hset("user:$userid", exists => 1);
+		$self->session->{userid} = $userid;
+	}
+	$self->session(expiration => 31536000); # approx 1 year
+	$self->render;
+}
+
 sub connect {
 	my $self = shift;
+	$self->finish(1011 => 'User session not found')
+		unless my $userid = $self->session->{userid};
+	$self->stash->{userid} = $userid;
+	
 	$self->app->log->debug('WebSocket opened');
 	$self->inactivity_timeout(30);
 	
@@ -24,6 +40,8 @@ sub connect {
 	
 	weaken $self;
 	Mojo::IOLoop->singleton->on(finish => sub { $self->loop_finish });
+	
+	$self->send(encode_json { action => 'user_data', user => $self->user_data($userid) });
 }
 
 sub loop_finish {
@@ -32,7 +50,6 @@ sub loop_finish {
 }
 
 my %ws_dispatch = (
-	set_userid => 'ws_set_userid',
 	set_nick => 'ws_set_nick',
 	chat => 'ws_chat',
 	join_game => 'ws_join_game',
@@ -55,19 +72,6 @@ sub on_ws_message {
 	} else {
 		return $self->app->log->warn("Received unknown WebSocket action from $nick: $action");
 	}
-}
-
-sub ws_set_userid {
-	my ($self, $msg_hash) = @_;
-	my $userid = $msg_hash->{userid};
-	if (defined $userid and $self->redis->exists("user:$userid")) { # Existing user
-		$self->send(encode_json { action => 'user_data', user => $self->user_data($userid) });
-	} else { # New user
-		$userid = md5_sum $self->tx->remote_address . '$' . rand . '$' . time;
-		$self->redis->hset("user:$userid", exists => 1);
-		$self->send(encode_json { action => 'set_userid', userid => $userid });
-	}
-	$self->stash->{userid} = $userid;
 }
 
 sub ws_set_nick {

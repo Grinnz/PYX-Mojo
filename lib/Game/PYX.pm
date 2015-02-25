@@ -26,7 +26,7 @@ sub startup {
 	});
 	
 	my $r = $self->routes;
-	$r->get('/')->to(template => 'game');
+	$r->get('/')->to('game#page', template => 'page');
 	$r->websocket('/ws')->to('game#connect')->name('ws_connect');
 }
 
