@@ -1,0 +1,24 @@
+{
+	# Redis connection URL. Default: redis://localhost:6379/0
+	redis_url => 'redis://x:something@localhost:6379/1',
+	
+	# Application secret, used for signing session cookies
+	secret => 'foobarbaz',
+	
+	# Hypnotoad server configuration
+	hypnotoad => {
+		# Listen address/port and other configuration. Default: http://*:8080
+		listen => ['http://*:3000'],
+		
+		# Number of preforked worker processes.
+		# Generally, set this to twice the number of CPU cores. Default: 4
+		workers => 8,
+		
+		# Set user and group of worker processes.
+		# Don't set these options unless the server is started as root, for example to bind to port 80.
+		user => 'somebody',
+		group => 'somegroup',
+		
+		# See Hypnotoad documentation for more configuration options.
+	},
+}

@@ -1,16 +1,13 @@
 package Game::PYX;
 use Mojo::Base 'Mojolicious';
-use Mojo::Redis2;
-use Scalar::Util 'weaken';
 
 sub startup {
 	my $self = shift;
 	
 	$self->moniker('pyx');
-	$self->plugin('Config' => { default => {
-	}});
-	my $secret = $self->config('secret') // 'pyx';
-	$self->secrets([$secret]);
+	$self->plugin('Config' => { default => {} });
+	my $secret = $self->config('secret');
+	$self->secrets([$secret]) if defined $secret;
 	
 	my $log = $self->log;
 	$SIG{__WARN__} = sub {
