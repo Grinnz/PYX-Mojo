@@ -1,17 +1,17 @@
 # PYX-Mojo
 [Pretend You're Xyzzy](http://pretendyoure.xyz/zy/) is an online version of the
 popular and often inappropriate party game [Cards Against Humanity](http://cardsagainsthumanity.com).
-This is an implementation of the [original game](https://github.com/ajanata/PretendYoureXyzzy/)
+This is an implementation of the [original PYX](https://github.com/ajanata/PretendYoureXyzzy/)
 using [Mojolicious](http://mojolicio.us), [WebSockets](https://developer.mozilla.org/en-US/docs/WebSockets),
 and notifications through [Redis](http://redis.io/).
 
-# Requirements
+## Requirements
 The only system requirements are:
 
 * Perl 5.10.1+
 * Redis 2.6.12+
 
-# Installation
+## Installation
 To install the required perl modules, run in the base directory:
 
 `cpanm --installdeps .`
@@ -20,7 +20,7 @@ If you don't have [cpanminus](https://metacpan.org/pod/App::cpanminus), you can 
 
 `curl -L https://cpanmin.us | perl - -M https://cpan.metacpan.org --installdeps .`
 
-# Configuration
+## Configuration
 Configuration can be specified in a file named `pyx.conf` in the base directory; see the example configuration file.
 The following configuration options are recognized:
 
@@ -28,7 +28,7 @@ The following configuration options are recognized:
 * `secret` - Application secret to sign session cookies. Set this to any string, changing this will invalidate existing sessions.
 * `hypnotoad` - This section is used directly to configure the Hypnotoad web server, see the [Hypnotoad documentation](https://metacpan.org/pod/Mojo::Server::Hypnotoad#SETTINGS) for more details.
 
-# Running
+## Running
 After configuring your Redis URL if needed, load the cards into Redis:
 
 `script/pyx_load cards.json`
