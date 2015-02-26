@@ -24,10 +24,9 @@ If you don't have [cpanminus](https://metacpan.org/pod/App::cpanminus), you can 
 Configuration can be specified in a file named `pyx.conf` in the base directory; see the example configuration file.
 The following configuration options are recognized:
 
-*`redis_url` - URL to access Redis database, in a format such as `redis://host:port/i` or `redis://x:password@host:port`.
-`i` is the database index to use. If not configured, it will connect to `redis://localhost:6379/0`.
+*`redis_url` - URL to access Redis database, in a format such as `redis://host:port/i` or `redis://x:password@host:port`. `i` is the database index to use. If not configured, it will connect to `redis://localhost:6379/0`.
 *`secret` - Application secret to sign session cookies. Set this to any string, changing this will invalidate existing sessions.
-*`hypnotoad` - This section is used directly to configure the Hypnotoad web server, see [https://metacpan.org/pod/Mojo::Server::Hypnotoad#SETTINGS] for more details.
+*`hypnotoad` - This section is used directly to configure the Hypnotoad web server, see the [https://metacpan.org/pod/Mojo::Server::Hypnotoad#SETTINGS](Hypnotoad documentation) for more details.
 
 # Running
 After configuring your Redis URL if needed, load the cards into Redis:
@@ -46,4 +45,4 @@ In Windows you can run the application as a standard daemon:
 
 `script/pyx daemon`
 
-This daemon must be configured by environment variables, see [https://metacpan.org/pod/Mojo::Server::Daemon#ATTRIBUTES].
+This daemon must be configured by environment variables, see [https://metacpan.org/pod/Mojo::Server::Daemon#ATTRIBUTES](Mojo::Server::Daemon).
