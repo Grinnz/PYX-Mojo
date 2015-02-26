@@ -38,7 +38,7 @@ Then, start the web server:
 `hypnotoad script/pyx`
 
 That's it! The application logs to `log/production.log`.
-You can reload the web server without dropping connections by running the same command again.
+You can reload the web server by running the same command again, or stop it with the `--stop` switch.
 
 Note: Hypnotoad is a UNIX optimized preforking server, and does not work in Windows environments.
 In Windows you can run the application as a standard daemon:
