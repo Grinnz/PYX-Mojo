@@ -30,18 +30,20 @@ sub connect {
 	$self->on(finish => \&on_ws_close);
 	
 	weaken $self;
-	Mojo::IOLoop->singleton->on(finish => sub { $self->loop_finish });
+	Mojo::IOLoop->singleton->on(finish => sub { $self->loop_finish if defined $self });
 	
 	$self->ws_send({ action => 'user_data', user => $self->user_data });
 }
 
 sub loop_finish {
 	my $self = shift;
-	$self->finish(1001 => 'Server exiting');
+	$self->finish(1001 => 'Server exiting') unless $self->stash->{closed};
+	return $self;
 }
 
 sub ws_send {
 	my ($self, $data) = @_;
+	return if $self->stash->{closed};
 	$self->send(encode_json $data);
 }
 
@@ -59,7 +61,7 @@ my %ws_dispatch = (
 
 sub on_ws_message {
 	my ($self, $msg) = @_;
-	my $nick = $self->stash->{nick};
+	my $nick = $self->stash->{nick} // '';
 	return $self->app->log->warn("Received invalid WebSocket message from $nick: $msg")
 		unless my $data = eval { decode_json $msg };
 	$self->app->log->debug("Received WebSocket message from $nick: $msg");
@@ -145,12 +147,14 @@ sub on_ws_close {
 	my ($self, $code, $reason) = @_;
 	my $nick = $self->stash->{nick};
 	$self->app->log->debug("WebSocket for $nick closed with status $code");
+	$self->stash->{closed} = 1;
 	my $games = $self->user_games;
+	$self->unsubscribe_from_games($games);
 	foreach my $game (@$games) {
 		$self->backend_publish("game:$game" =>
 			{ game => $game, from => $nick, action => 'user_disconnect', time => time });
 	}
-	$self->unsubscribe_from_games($games);
+	$self->clear_backend;
 }
 
 sub on_backend_message {

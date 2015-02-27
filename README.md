@@ -45,4 +45,4 @@ In Windows you can run the application as a standard daemon:
 
 `script/pyx daemon`
 
-This daemon must be configured by environment variables, see [Mojo::Server::Daemon](https://metacpan.org/pod/Mojo::Server::Daemon#ATTRIBUTES).
+This daemon accepts configuration through command-line switches, see documentation for the [daemon command](https://metacpan.org/pod/Mojolicious::Command::daemon).

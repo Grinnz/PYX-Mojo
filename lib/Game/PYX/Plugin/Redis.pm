@@ -13,7 +13,8 @@ sub register {
 	my ($self, $app) = @_;
 	
 	$app->helper($_ => $self->can("_$_")) for qw/
-		redis backend_publish user_exists set_user_exists set_user_nick user_data user_games
+		redis backend_publish clear_backend
+		user_exists set_user_exists set_user_nick user_data user_games
 		game_list game_exists game_state game_host game_status
 		gather_cards card_data init_game subscribe_to_game unsubscribe_from_games
 		add_game_player remove_game_player
@@ -46,6 +47,11 @@ sub _redis {
 sub _backend_publish {
 	my ($c, $channel, $data) = @_;
 	$c->redis->publish($channel => encode_json $data);
+}
+
+sub _clear_backend {
+	my $c = shift;
+	delete $c->stash->{'pyx.redis'};
 }
 
 sub _user_exists {
@@ -319,9 +325,13 @@ sub _set_next_czar {
 	my $redis = $c->redis;
 	my $players = $c->game_players($game);
 	my $czar = $redis->hget("game:$game", 'czar');
-	my $czar_i = first_index { $czar eq $_ } @$players;
-	$czar_i = ($czar_i < 0) ? 0 : $czar_i + 1;
-	my $next_czar = $players->[$czar_i] // $players->[0];
+	my $next_czar;
+	if (defined $czar) {
+		my $czar_i = first_index { $czar eq $_ } @$players;
+		$czar_i = ($czar_i < 0) ? 0 : $czar_i + 1;
+		$next_czar = $players->[$czar_i];
+	}
+	$next_czar //= $players->[0];
 	$redis->hset("game:$game", czar => $next_czar);
 	return $next_czar;
 }
