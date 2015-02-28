@@ -61,16 +61,16 @@ function GameViewModel() {
 	self.activeGame = ko.observable(null);
 	
 	self.nick = ko.observable(null);
-	self.requestedOnNick = null;
+	self.redirectOnNick = null;
 	
 	self.submitNick = function() {
 		ws_send({'action':'set_nick', 'nick':self.nick()});
 	};
 	
 	self.onNickUpdate = function(redir) {
-		if (self.requestedOnNick !== null) {
-			location.hash = requested;
-			self.requestedOnNick = null;
+		if (self.redirectOnNick !== null) {
+			location.hash = self.redirectOnNick;
+			self.redirectOnNick = null;
 		} else if (redir) {
 			self.goToGamesLobby();
 		}
@@ -84,6 +84,8 @@ function GameViewModel() {
 			self.availableGames.push(game);
 		});
 	};
+	
+	self.redirectOnGame = null;
 	
 	self.gameToCreate = ko.observable('');
 	self.createGame = function() {
@@ -139,7 +141,7 @@ function GameViewModel() {
 			self.showGamesLobby(true);
 			ws_send({'action':'game_list'});
 		} else {
-			self.requestedPage = location.hash;
+			self.redirectOnNick = location.hash;
 			self.goToLandingPage();
 		}
 	});
@@ -153,7 +155,7 @@ function GameViewModel() {
 			self.showGamesLobby(false);
 			self.activeGame(game);
 		} else {
-			self.requestedPage = location.hash;
+			self.redirectOnNick = location.hash;
 			self.goToLandingPage();
 		}
 	});
